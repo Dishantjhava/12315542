@@ -1,28 +1,16 @@
-'use strict';
-
-/**
- * External API service for the evaluation server.
- *
- * Auth flow:
- *   POST /evaluation-service/auth with { name, email, rollNo, accessCode, clientID, clientSecret }
- *   → returns { token_type: "Bearer", access_token: "<jwt>", expires_in: <unix_ts> }
- *
- * The JWT is then used as: Authorization: Bearer <access_token>
- * Token is cached in memory; auto-refreshed when expired.
- */
-
 const axios = require('axios');
+require('dotenv').config();
 
-const BASE_URL = 'http://4.224.186.213/evaluation-service';
+const BASE = 'http://4.224.186.213/evaluation-service';
 
-let _cachedToken = null;
-let _tokenExpiry = 0;
+let cachedToken = null;
+let tokenExpiry = 0;
 
-async function getAccessToken() {
+async function getToken() {
   const now = Math.floor(Date.now() / 1000);
-  if (_cachedToken && now < _tokenExpiry - 60) return _cachedToken; // 60s buffer
+  if (cachedToken && now < tokenExpiry - 60) return cachedToken;
 
-  const response = await axios.post(`${BASE_URL}/auth`, {
+  const res = await axios.post(`${BASE}/auth`, {
     name:         process.env.REG_NAME,
     email:        process.env.REG_EMAIL,
     rollNo:       process.env.ROLL_NO,
@@ -31,28 +19,25 @@ async function getAccessToken() {
     clientSecret: process.env.CLIENT_SECRET,
   });
 
-  _cachedToken = response.data.access_token;
-  _tokenExpiry = response.data.expires_in;
-  return _cachedToken;
+  cachedToken = res.data.access_token;
+  tokenExpiry = res.data.expires_in;
+  return cachedToken;
 }
 
-function authHeaders(token) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+function authHeader(token) {
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function fetchDepots() {
-  const token = await getAccessToken();
-  const response = await axios.get(`${BASE_URL}/depots`, { headers: authHeaders(token) });
-  return response.data.depots;
+  const token = await getToken();
+  const res = await axios.get(`${BASE}/depots`, { headers: authHeader(token) });
+  return res.data.depots;
 }
 
 async function fetchVehicles() {
-  const token = await getAccessToken();
-  const response = await axios.get(`${BASE_URL}/vehicles`, { headers: authHeaders(token) });
-  return response.data.vehicles;
+  const token = await getToken();
+  const res = await axios.get(`${BASE}/vehicles`, { headers: authHeader(token) });
+  return res.data.vehicles;
 }
 
-module.exports = { fetchDepots, fetchVehicles, getAccessToken };
+module.exports = { fetchDepots, fetchVehicles };

@@ -1,32 +1,24 @@
-'use strict';
-
-// Global error handler middleware
 function errorHandler(err, req, res, next) {
-  console.error(`[ERROR] ${err.message}`);
+  console.error('[error]', err.message);
 
-  // Handle axios errors from external API calls
   if (err.response) {
-    const { status, data } = err.response;
-    return res.status(status).json({
+    return res.status(err.response.status).json({
       success: false,
-      error: 'External API error',
-      details: data,
-      statusCode: status,
+      error: 'external API error',
+      detail: err.response.data,
     });
   }
 
-  // Handle network errors (no response received)
   if (err.request) {
     return res.status(503).json({
       success: false,
-      error: 'External API unreachable — check your network or credentials',
+      error: 'could not reach external API, check your credentials',
     });
   }
 
-  // Generic error
   res.status(err.status || 500).json({
     success: false,
-    error: err.message || 'Internal server error',
+    error: err.message || 'something went wrong',
   });
 }
 

@@ -1,20 +1,17 @@
-'use strict';
-
-// Shared logger — same implementation as logging_middleware package
-// Exports: { Log, requestLogger }
-
 const axios = require('axios');
+require('dotenv').config();
 
-const LOG_ENDPOINT = 'http://4.224.186.213/evaluation-service/logs';
-const AUTH_ENDPOINT = 'http://4.224.186.213/evaluation-service/auth';
+const LOG_URL  = 'http://4.224.186.213/evaluation-service/logs';
+const AUTH_URL = 'http://4.224.186.213/evaluation-service/auth';
 
-let _token = null;
-let _tokenExpiry = 0;
+let cachedToken = null;
+let tokenExpiry = 0;
 
-async function _getToken() {
+async function getToken() {
   const now = Math.floor(Date.now() / 1000);
-  if (_token && now < _tokenExpiry - 60) return _token;
-  const r = await axios.post(AUTH_ENDPOINT, {
+  if (cachedToken && now < tokenExpiry - 60) return cachedToken;
+
+  const res = await axios.post(AUTH_URL, {
     name:         process.env.REG_NAME,
     email:        process.env.REG_EMAIL,
     rollNo:       process.env.ROLL_NO,
@@ -22,37 +19,37 @@ async function _getToken() {
     clientID:     process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
   });
-  _token = r.data.access_token;
-  _tokenExpiry = r.data.expires_in;
-  return _token;
+
+  cachedToken = res.data.access_token;
+  tokenExpiry = res.data.expires_in;
+  return cachedToken;
 }
 
 async function Log(stack, level, pkg, message) {
-  const trimmed = String(message).slice(0, 48); // server enforces ≤48 chars
+  const msg = String(message).slice(0, 48);
   try {
-    const token = await _getToken();
+    const token = await getToken();
     await axios.post(
-      LOG_ENDPOINT,
-      { stack, level, package: pkg, message: trimmed },
-      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+      LOG_URL,
+      { stack, level, package: pkg, message: msg },
+      { headers: { Authorization: `Bearer ${token}` } }
     );
   } catch (err) {
-    const errMsg = err.response ? JSON.stringify(err.response.data) : err.message;
-    console.error(`[Log fallback] ${level.toUpperCase()} [${stack}/${pkg}] ${trimmed} | err: ${errMsg}`);
+    console.error(`[log error] ${level} | ${pkg} | ${msg}`);
   }
 }
 
 function requestLogger(req, res, next) {
-  const startTime = Date.now();
+  const start = Date.now();
   Log('backend', 'info', 'middleware', `${req.method} ${req.originalUrl}`);
 
   res.on('finish', () => {
-    const responseTime = Date.now() - startTime;
+    const ms = Date.now() - start;
     const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-    const msg = `${req.method} ${req.path} ${res.statusCode} ${responseTime}ms`;
-    Log('backend', level, 'middleware', msg);
+    Log('backend', level, 'middleware', `${req.method} ${req.path} ${res.statusCode} ${ms}ms`);
+
     const color = level === 'error' ? '\x1b[31m' : level === 'warn' ? '\x1b[33m' : '\x1b[32m';
-    console.log(`${color}[${new Date().toISOString()}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${responseTime}ms)\x1b[0m`);
+    console.log(`${color}[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} (${ms}ms)\x1b[0m`);
   });
 
   next();
